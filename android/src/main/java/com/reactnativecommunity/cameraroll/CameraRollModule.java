@@ -61,7 +61,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Set;
-
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import javax.annotation.Nullable;
 
 /**
@@ -148,37 +149,53 @@ public class CameraRollModule extends ReactContextBaseJavaModule {
       File source = new File(mUri.getPath());
       FileChannel input = null, output = null;
       try {
-         if ("video".equals(mOptions.getString("type"))) {
-            try {
-              new ReplaceMP4Editor().modifyOrReplace(source, new MP4Edit() {
-                @Override
-                public void applyToFragment(MovieBox mov, MovieFragmentBox[] fragmentBox) {
+        if ("video".equals(mOptions.getString("type"))) {
+          try {
+            new ReplaceMP4Editor().modifyOrReplace(source, new MP4Edit() {
+              @Override
+              public void applyToFragment(MovieBox mov, MovieFragmentBox[] fragmentBox) {
+              }
+
+              @Override
+              public void apply(MovieBox movie) {
+                try {
+                  MovieHeaderBox mvhd = NodeBox.findFirst(movie, MovieHeaderBox.class, MovieHeaderBox.fourcc());
+                  long currentTimeMillis = System.currentTimeMillis();
+                  Field createdField = MovieHeaderBox.class.getDeclaredField("created");
+                  createdField.setAccessible(true);
+                  createdField.set(mvhd, currentTimeMillis);
+                  Field modifiedField = MovieHeaderBox.class.getDeclaredField("modified");
+                  modifiedField.setAccessible(true);
+                  modifiedField.set(mvhd, currentTimeMillis);
+                } catch (Exception e) {
+                  mPromise.reject(e);
+                  FLog.e(ReactConstants.TAG, "Could not　modify created or modified", e);
+                  return;
                 }
-  
-                @Override
-                public void apply(MovieBox movie) {
-                  try {
-                      MovieHeaderBox mvhd = NodeBox.findFirst(movie, MovieHeaderBox.class, MovieHeaderBox.fourcc());
-                      long currentTimeMillis = System.currentTimeMillis();
-                      Field createdField = MovieHeaderBox.class.getDeclaredField("created");
-                      createdField.setAccessible(true);
-                      createdField.set(mvhd, currentTimeMillis);
-                      Field modifiedField = MovieHeaderBox.class.getDeclaredField("modified");
-                      modifiedField.setAccessible(true);
-                      modifiedField.set(mvhd, currentTimeMillis);
-                    } catch (Exception e) {
-                      mPromise.reject(e);
-                      FLog.e(ReactConstants.TAG, "Could not　modify created or modified", e);
-                      return;
-                    }
-                  }
-                });
-            } catch(Exception e) {
-              mPromise.reject(e);
-              FLog.e(ReactConstants.TAG, "Could not　modify created or modified", e);
-              return;
-            }
+              }
+            });
+          } catch (Exception e) {
+            mPromise.reject(e);
+            FLog.e(ReactConstants.TAG, "Could not　modify created or modified", e);
+            return;
           }
+        }
+          
+        // 修改图片的拍摄日期
+        if ("photo".equals(mOptions.getString("type"))) {
+          try {
+            SimpleDateFormat dateTimeFormat = new SimpleDateFormat("yyyy:MM:dd HH:mm:ss");
+            Date date = new Date();
+            ExifInterface newSource = new ExifInterface(mUri.getPath());
+            newSource.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, dateTimeFormat.format(date));
+            newSource.setAttribute(ExifInterface.TAG_DATETIME, dateTimeFormat.format(date));
+            newSource.setAttribute(ExifInterface.TAG_DATETIME_DIGITIZED, dateTimeFormat.format(date));
+            newSource.saveAttributes();
+          } catch (Exception e) {
+            FLog.e(ReactConstants.TAG, "Could not　modify photo created or modified", e);
+            return;
+          }
+        }
 
         boolean isAlbumPresent = !"".equals(mOptions.getString("album"));
         
